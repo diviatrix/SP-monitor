@@ -1,5 +1,7 @@
 # Port Monitor Service
 
+[Изображение интерфейса SP-Monitor](https://files.oleg.fans/2Kg87j.png)
+
 This service displays an HTML dashboard showing the status of configured services, validated by checking if ports are in use or if systemd services are active.
 
 ## Configuration
