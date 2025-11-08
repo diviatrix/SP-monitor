@@ -1,6 +1,7 @@
-# Port Monitor Service
+# SP monitor - Service/Port Monitor Web Dashboard Service
+Simple to configure, ultra-lightweight.
 
-![Изображение интерфейса SP-Monitor](https://files.oleg.fans/2Kg87j.png)
+![interface of SP-Monitor](https://files.oleg.fans/2Kg87j.png)
 
 This service displays an HTML dashboard showing the status of configured services, validated by checking if ports are in use or if systemd services are active.
 
