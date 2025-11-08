@@ -1,0 +1,14 @@
+[Unit]
+Description=Port Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/server/repo/port-monitor-service
+ExecStart=/home/server/repo/port-monitor-service/port-monitor
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>status.oleg.fans</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>status.oleg.fans</h1>
+            <div class="subtitle">Наши сервисы</div>
+        </header>
+        
+        <div class="dashboard">
+            {{range .}}
+            <div class="service-card {{if .Active}}active{{else}}inactive{{end}}">
+                <div class="service-header">
+                    <div class="service-image">
+                        {{if .Image}}
+                            <img src="{{.Image}}" alt="{{.Name}} icon" onerror="this.style.display='none'; this.parentElement.innerHTML='{{getInitials .Name}}';">
+                        {{else}}
+                            {{getInitials .Name}}
+                        {{end}}
+                    </div>
+                    <h3 class="service-name">{{.Name}}</h3>
+                </div>
+                {{if .ShowPort}}<div class="service-port">Port: {{.Port}}</div>{{end}}
+                {{if .Link}}
+                <a href="{{.Link}}" class="service-link" target="_blank">{{.Link}}</a>
+                {{end}}
+                <div class="status status-{{if .Active}}active{{else}}inactive{{end}}">
+                    {{if .Active}}RUNNING{{else}}STOPPED{{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+        
+        <div class="footer">
+            oleg.fans &copy; {{Year}}
+        </div>
+    </div>
+</body>
+</html>

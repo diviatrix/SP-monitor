@@ -1,0 +1,87 @@
+{
+  "services": [
+    {
+      "port": 7331,
+      "name": "Main page",
+      "link": "https://oleg.fans",
+      "image": "https://oleg.fans/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 7332,
+      "name": "Docs Service",
+      "link": "https://docs.oleg.fans",
+      "image": "https://docs.oleg.fans/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 7333,
+      "name": "Auth service",
+      "link": "https://auth.oleg.fans",
+      "image": "https://auth.oleg.fans/favicon.ico",
+      "show_port": false
+    },
+   	{
+   	  "port": 7334,
+   	  "name": "Minecraft Web Map",
+   	  "link": "https://mc.oleg.fans",
+   	  "image": "https://mc.oleg.fans/favicon.ico",
+   	  "show_port": false
+   	},
+    {
+      "port": 7335,
+      "name": "Message Service",
+      "link": "https://msg.oleg.fans",
+      "image": "https://msg.oleg.fans/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 7341,
+      "name": "files.oleg.fans",
+      "link": "https://files.oleg.fans",
+      "image": "https://files.oleg.fans/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 7342,
+      "name": "Pathswiper Game",
+      "link": "https://quest.oleg.fans",
+      "image": "https://quest.oleg.fans/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 7777,
+      "name": "Terraria Server [Vanilla]",
+      "link": "http://killingspree.ru",
+      "image": "https://killingspree.ru/favicon.ico",
+      "show_port": true
+    },
+    {
+      "port": 9002,
+      "name": "Pixel Grid Editor",
+      "link": "http://pixg.oleg.fans",
+      "image": "https://killingspree.ru/favicon.ico",
+      "show_port": false
+    },
+    {
+      "port": 25565,
+      "name": "Minecraft",
+      "link": "http://killingspree.ru",
+      "image": "https://killingspree.ru/favicon.ico",
+      "show_port": true
+    },
+    {
+      "port": 42420,
+      "name": "MC Vintage Story",
+      "link": "http://killingspree.ru",
+      "image": "https://killingspree.ru/favicon.ico",
+      "show_port": true
+    },
+    {
+      "name": "Gala Music Bot",
+      "systemd_name": "GALA-tgmusicbot",
+      "link": "https://t.me/Klaus_House",
+      "image": "https://files.oleg.fans/p8S2bg.jpg"
+    }
+  ]
+}
