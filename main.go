@@ -54,6 +54,15 @@ func resolvePath(p string) string {
 	return p
 }
 
+func serveStatic(w http.ResponseWriter, r *http.Request, path string) {
+	if _, err := os.Stat(path); err != nil {
+		log.Printf("static 404: %s (%v)", path, err)
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
 func main() {
 	// Load configuration
 	config, err := loadConfig("config.json")
@@ -255,9 +264,7 @@ func main() {
 	http.Handle("/api/service/stop", actionHandler("stop"))
 
 	// Expose exported status.json (optional consumption by clients)
-	http.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, statusFileWrite)
-	})
+	http.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) { serveStatic(w, r, statusFileWrite) })
 
 	// Page
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -268,15 +275,16 @@ func main() {
 		renderHTML(w, services, templateFileAbs)
 	})
 
-	// Static
+	// Static (serve both root paths and legacy /web/*)
 	http.HandleFunc("/styles.css", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(webDirAbs, "styles.css"))
+		serveStatic(w, r, filepath.Join(webDirAbs, "styles.css"))
 	})
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(webDirAbs, "favicon.ico"))
+		serveStatic(w, r, filepath.Join(webDirAbs, "favicon.ico"))
 	})
+	http.Handle("/web/", http.StripPrefix("/web/", http.FileServer(http.Dir(webDirAbs))))
 
-	fmt.Printf("Server starting on port %d (export: %s, import: %s, interval: %s, os: %s)\n", config.Port, statusFileWrite, statusFileRead, statusExportInterval, runtime.GOOS)
+	fmt.Printf("Server starting on port %d (web=%s, tpl=%s, export=%s, import=%s, interval=%s, os=%s)\n", config.Port, webDirAbs, templateFileAbs, statusFileWrite, statusFileRead, statusExportInterval, runtime.GOOS)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
 }
 
