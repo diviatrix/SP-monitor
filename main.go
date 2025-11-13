@@ -226,8 +226,12 @@ func main() {
 	})
 
 	// Static
-	http.Handle("/styles.css", http.FileServer(http.Dir(webDir)))
-	http.Handle("/favicon.ico", http.FileServer(http.Dir(webDir)))
+	http.HandleFunc("/styles.css", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(webDir, "styles.css"))
+	})
+	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(webDir, "favicon.ico"))
+	})
 
 	fmt.Printf("Server starting on port %d (export: %s, import: %s, interval: %s, os: %s)\n", config.Port, statusFileWrite, statusFileRead, statusExportInterval, runtime.GOOS)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -115,20 +116,28 @@ func renderHTML(w http.ResponseWriter, services []Service, templatePath string) 
 	sort.Slice(active, func(i, j int) bool { return active[i].Name < active[j].Name })
 	sort.Slice(inactive, func(i, j int) bool { return inactive[i].Name < inactive[j].Name })
 	services = append(active, inactive...)
-	tmpl, err := template.New("index.html").Funcs(template.FuncMap{"getInitials": func(name string) string {
-		for _, c := range name {
-			if c != ' ' && c != '[' {
-				return string(c)
+	tmpl, err := template.New("index.html").Funcs(template.FuncMap{
+		"getInitials": func(name string) string {
+			for _, c := range name {
+				if c != ' ' && c != '[' {
+					return string(c)
+				}
 			}
-		}
-		return "?"
-	}, "Year": func() int { return time.Now().Year() }}).ParseFiles(templatePath)
+			return "?"
+		},
+		"Year": func() int { return time.Now().Year() },
+	}).ParseFiles(templatePath)
 	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
+		http.Error(w, "template parse error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html")
-	_ = tmpl.ExecuteTemplate(w, "index.html", services)
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "index.html", services); err != nil {
+		http.Error(w, "template exec error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(buf.Bytes())
 }
 
 // track last exported state to detect status changes
