@@ -22,6 +22,11 @@ var appCfg *Config
 // Add in-memory common passwords set
 var commonPw map[string]struct{}
 
+// Built-in fallback list to ensure consistent behavior if file not found
+var defaultCommonPw = []string{
+	"123456", "123456789", "12345678", "12345", "qwerty", "password", "111111", "abc123", "123123", "000000", "letmein", "1q2w3e", "admin", "adminadmin", "admin admin", "iloveyou",
+}
+
 // resolvePath keeps dev `go run` working (temp go-build exe) and supports installed binary.
 func resolvePath(p string) string {
 	if p == "" {
@@ -59,25 +64,28 @@ func resolvePath(p string) string {
 
 // Helper to load common passwords JSON array from file into a set (lowercased)
 func loadCommonPasswords(path string) map[string]struct{} {
+	buildSet := func(list []string) map[string]struct{} {
+		m := make(map[string]struct{}, len(list))
+		for _, s := range list {
+			v := strings.ToLower(strings.TrimSpace(s))
+			if v == "" {
+				continue
+			}
+			m[v] = struct{}{}
+		}
+		return m
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("common passwords file not found: %v", err)
-		return nil
+		log.Printf("common passwords file not found, using built-in defaults: %v", err)
+		return buildSet(defaultCommonPw)
 	}
 	var arr []string
 	if err := json.Unmarshal(data, &arr); err != nil {
-		log.Printf("failed to parse common passwords: %v", err)
-		return nil
+		log.Printf("failed to parse common passwords, using built-in defaults: %v", err)
+		return buildSet(defaultCommonPw)
 	}
-	m := make(map[string]struct{}, len(arr))
-	for _, s := range arr {
-		v := strings.ToLower(strings.TrimSpace(s))
-		if v == "" {
-			continue
-		}
-		m[v] = struct{}{}
-	}
-	return m
+	return buildSet(arr)
 }
 
 func isCommonPassword(pw string) bool {
@@ -142,8 +150,13 @@ func main() {
 	}
 
 	// Load common passwords file (optional)
-	commonPwPath := resolvePath(filepath.Join("data", "commonpasswords.json"))
+	commonPwFile := appCfg.CommonPasswordsFile
+	if commonPwFile == "" {
+		commonPwFile = filepath.Join("data", "commonpasswords.json")
+	}
+	commonPwPath := resolvePath(commonPwFile)
 	commonPw = loadCommonPasswords(commonPwPath)
+	log.Printf("commonPw loaded: %d entries (admin=%v, 'admin admin'=%v)", len(commonPw), isCommonPassword("admin"), isCommonPassword("admin admin"))
 
 	// Background exporter with change detection (non-blocking startup)
 	go func() {
@@ -190,7 +203,7 @@ func main() {
 			sessions.tokens[tok] = body.Login
 			sessions.Unlock()
 			http.SetCookie(w, &http.Cookie{Name: "session", Value: tok, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(24 * time.Hour)})
-			respondJSON(w, map[string]any{"ok": true})
+			respondJSON(w, map[string]any{"ok": true, "message": "ok"})
 			return
 		}
 		respondJSONCode(w, http.StatusUnauthorized, map[string]any{"ok": false, "message": "invalid credentials"})

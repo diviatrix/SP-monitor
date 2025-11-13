@@ -5,14 +5,15 @@ package main
 // Optional fields kept for backward compatibility
 // and to avoid breaking existing deployments.
 type Config struct {
-	Port         int    `json:"port"`
-	ServicesFile string `json:"services_file,omitempty"`
-	WebDir       string `json:"web_dir,omitempty"`
-	TemplateFile string `json:"template_file,omitempty"`
-	AdminLogin   string `json:"admin_login,omitempty"`
-	AdminPass    string `json:"admin_password,omitempty"`
-	LogFile      string `json:"log_file,omitempty"`
-	LogMaxBytes  int    `json:"log_max_bytes,omitempty"`
+	Port                int    `json:"port"`
+	ServicesFile        string `json:"services_file,omitempty"`
+	WebDir              string `json:"web_dir,omitempty"`
+	TemplateFile        string `json:"template_file,omitempty"`
+	AdminLogin          string `json:"admin_login,omitempty"`
+	AdminPass           string `json:"admin_password,omitempty"`
+	LogFile             string `json:"log_file,omitempty"`
+	LogMaxBytes         int    `json:"log_max_bytes,omitempty"`
+	CommonPasswordsFile string `json:"common_passwords_file,omitempty"`
 }
 
 // ServicesConfig represents the services configuration

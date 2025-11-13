@@ -8,7 +8,9 @@ import (
 )
 
 func loadConfig(filename string) (*Config, error) {
-	data, err := os.ReadFile(filename)
+	// Resolve path so it works with different CWDs and installed binaries
+	path := resolvePath(filename)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
