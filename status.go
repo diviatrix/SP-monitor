@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -128,12 +129,14 @@ func renderHTML(w http.ResponseWriter, services []Service, templatePath string) 
 		"Year": func() int { return time.Now().Year() },
 	}).ParseFiles(templatePath)
 	if err != nil {
-		http.Error(w, "template parse error", http.StatusInternalServerError)
+		log.Printf("template parse error: %v (template=%s)", err, templatePath)
+		http.Error(w, fmt.Sprintf("template parse error: %v", err), http.StatusInternalServerError)
 		return
 	}
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, "index.html", services); err != nil {
-		http.Error(w, "template exec error", http.StatusInternalServerError)
+		log.Printf("template exec error: %v (template=%s)", err, templatePath)
+		http.Error(w, fmt.Sprintf("template exec error: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
