@@ -3,46 +3,21 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os/exec"
-	"sort"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
-// Config represents the configuration structure
-type Config struct {
-	Port     int    `json:"port"`
-}
+// statusExportInterval defines how often we refresh the status file (seconds) (optional env STATUS_INTERVAL)
+var statusExportInterval = 5 * time.Second
 
-// ServicesConfig represents the services configuration
-type ServicesConfig struct {
-	Services []ServiceInfo `json:"services"`
-}
-
-// ServiceInfo represents information about a service
-type ServiceInfo struct {
-	Port          int    `json:"port"`
-	Name          string `json:"name"`
-	Link          string `json:"link,omitempty"`
-	Image         string `json:"image,omitempty"`
-	ShowPort      bool   `json:"show_port,omitempty"`
-	SystemdName   string `json:"systemd_name,omitempty"`
-}
-
-// Service represents a service with its status
-type Service struct {
-	Port        int
-	Name        string
-	Link        string
-	Image       string
-	ShowPort    bool
-	SystemdName string
-	IsSystemd   bool
-	Active      bool
-}
+var envCfg EnvConfig
+var appCfg *Config
 
 func main() {
 	// Load configuration
@@ -50,170 +25,240 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading config:", err)
 	}
+	appCfg = config
+
+	// Apply defaults if fields are missing for backward compatibility
+	svFile := config.ServicesFile
+	if svFile == "" {
+		svFile = "services.json"
+	}
+	webDir := config.WebDir
+	if webDir == "" {
+		webDir = "web"
+	}
+	templateFile := config.TemplateFile
+	if templateFile == "" {
+		templateFile = webDir + "/index.html"
+	}
+	if appCfg.LogFile == "" {
+		appCfg.LogFile = "log.csv"
+	}
+
+	// Load environment settings via helper
+	envCfg = LoadEnv()
+	statusFileWrite := filepath.Join(envCfg.ExportPath, envCfg.ExportName)
+	statusFileRead := filepath.Join(envCfg.ImportPath, envCfg.ImportName)
+	statusExportInterval = envCfg.StatusInterval
 
 	// Load services configuration
-	servicesConfig, err := loadServicesConfig("services.json")
+	servicesConfig, err := loadServicesConfig(svFile)
 	if err != nil {
 		log.Fatal("Error loading services config:", err)
 	}
 
-	// Set up HTTP server
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Get services information
-		services := getServicesStatus(servicesConfig.Services)
+	// Background exporter with change detection (non-blocking startup)
+	go func() {
+		// initial snapshot + export
+		curr := getServicesStatus(servicesConfig.Services)
+		detectAndLogStatusChanges(lastStatus, curr)
+		if err := exportStatusFile(servicesConfig.Services, statusFileWrite); err != nil {
+			log.Println("Initial status export error:", err)
+		}
+		// periodic refresh
+		ticker := time.NewTicker(statusExportInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			curr := getServicesStatus(servicesConfig.Services)
+			detectAndLogStatusChanges(lastStatus, curr)
+			if err := exportStatusFile(servicesConfig.Services, statusFileWrite); err != nil {
+				log.Println("Status export error:", err)
+			}
+		}
+	}()
 
-		// Render HTML page
-		renderHTML(w, services)
+	// API routes
+	http.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Login string `json:"login"`
+			Pass  string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if body.Login == appCfg.AdminLogin && body.Pass == appCfg.AdminPass && body.Login != "" {
+			tok := newToken()
+			sessions.Lock()
+			sessions.tokens[tok] = body.Login
+			sessions.Unlock()
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: tok, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(24 * time.Hour)})
+			respondJSON(w, map[string]any{"ok": true})
+			return
+		}
+		respondJSONCode(w, http.StatusUnauthorized, map[string]any{"ok": false})
 	})
-	
-	// Serve static files (CSS, JS, images)
-	http.Handle("/styles.css", http.StripPrefix("/", http.FileServer(http.Dir("./web/"))))
 
-	fmt.Printf("Server starting on port %d\n", config.Port)
+	http.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if tok := getSessionToken(r); tok != "" {
+			sessions.Lock()
+			delete(sessions.tokens, tok)
+			sessions.Unlock()
+		}
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "", Path: "/", Expires: time.Unix(0, 0)})
+		respondJSON(w, map[string]any{"ok": true})
+	})
+
+	http.HandleFunc("/api/me", func(w http.ResponseWriter, r *http.Request) {
+		user := authUser(r)
+		respondJSON(w, map[string]any{"loggedIn": user != "", "user": user})
+	})
+
+	// Logs endpoint: return last N lines (without header)
+	http.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+		user := authUser(r)
+		if user == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		limit := 200
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 2000 {
+				limit = v
+			}
+		}
+		lines := tailLogFile(appCfg.LogFile, limit)
+		respondJSON(w, map[string]any{"lines": lines})
+	})
+
+	type actionRequest struct {
+		Name        string `json:"name,omitempty"`
+		ServiceName string `json:"service_name,omitempty"`
+		SystemdName string `json:"systemd_name,omitempty"`
+		Port        int    `json:"port,omitempty"`
+	}
+
+	actionHandler := func(kind string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			user := authUser(r)
+			if user == "" {
+				respondJSONCode(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+			var req actionRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				respondJSONCode(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+				return
+			}
+			// find target
+			var target *ServiceInfo
+			for i := range servicesConfig.Services {
+				si := &servicesConfig.Services[i]
+				if (req.Name != "" && eqFold(si.Name, req.Name)) ||
+					(req.ServiceName != "" && eqFold(si.ServiceName, req.ServiceName)) ||
+					(req.SystemdName != "" && eqFold(si.SystemdName, req.SystemdName)) ||
+					(req.Port != 0 && si.Port == req.Port) {
+					target = si
+					break
+				}
+			}
+			if target == nil {
+				respondJSONCode(w, http.StatusNotFound, map[string]string{"error": "service not found"})
+				return
+			}
+			// permissions
+			if !target.Controls {
+				respondJSONCode(w, http.StatusForbidden, map[string]string{"error": "controls disabled"})
+				return
+			}
+			if kind == "start" && !target.ControlsRun {
+				respondJSONCode(w, http.StatusForbidden, map[string]string{"error": "start disabled"})
+				return
+			}
+			if kind == "stop" && !target.ControlsShut {
+				respondJSONCode(w, http.StatusForbidden, map[string]string{"error": "stop disabled"})
+				return
+			}
+
+			var err error
+			if kind == "start" {
+				err = startService(*target)
+			} else {
+				err = stopService(*target)
+			}
+			result := "ok"
+			if err != nil {
+				result = "error: " + err.Error()
+				respondJSONCode(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+			} else {
+				respondJSON(w, map[string]any{"ok": true})
+				_ = exportStatusFile(servicesConfig.Services, statusFileWrite)
+			}
+			_ = logAction(appCfg.LogFile, time.Now(), user, clientIP(r), target, kind, result)
+		}
+	}
+
+	http.Handle("/api/service/start", actionHandler("start"))
+	http.Handle("/api/service/stop", actionHandler("stop"))
+
+	// Expose exported status.json (optional consumption by clients)
+	http.Handle("/status.json", http.FileServer(http.Dir(envCfg.ExportPath)))
+
+	// Page
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		services, err := loadStatusFile(statusFileRead)
+		if err != nil {
+			// Do not block on live checks at first load; render quickly with defaults
+			services = defaultServicesFromInfo(servicesConfig.Services)
+		}
+		renderHTML(w, services, templateFile)
+	})
+
+	// Static
+	http.Handle("/styles.css", http.FileServer(http.Dir(webDir)))
+	http.Handle("/favicon.ico", http.FileServer(http.Dir(webDir)))
+
+	fmt.Printf("Server starting on port %d (export: %s, import: %s, interval: %s, os: %s)\n", config.Port, statusFileWrite, statusFileRead, statusExportInterval, runtime.GOOS)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
 }
 
-// loadConfig loads the configuration from a JSON file
-func loadConfig(filename string) (*Config, error) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
+// small helper used only here
+func eqFold(a, b string) bool {
+	if len(a) != len(b) {
+		return strings.EqualFold(a, b)
 	}
-
-	var config Config
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+	return a == b
 }
 
-// loadServicesConfig loads the services configuration from a JSON file
-func loadServicesConfig(filename string) (*ServicesConfig, error) {
-	data, err := ioutil.ReadFile(filename)
+// tailLogFile returns last n lines excluding header
+func tailLogFile(path string, n int) []string {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-
-	var servicesConfig ServicesConfig
-	err = json.Unmarshal(data, &servicesConfig)
-	if err != nil {
-		return nil, err
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	startIdx := 0
+	if len(lines) > 0 && strings.HasPrefix(lines[0], "timestamp,") {
+		startIdx = 1
 	}
-
-	return &servicesConfig, nil
-}
-
-
-
-// getServicesStatus checks the status of all configured services
-func getServicesStatus(services []ServiceInfo) []Service {
-	var result []Service
-
-	for _, service := range services {
-		var active bool
-		var isSystemd bool
-		
-		// Check if it's a systemd service based on whether SystemdName is present
-		if service.SystemdName != "" {
-			active = isSystemdServiceActive(service.SystemdName)
-			isSystemd = true
-		} else {
-			active = isPortInUse(service.Port)
-			isSystemd = false
-		}
-
-		result = append(result, Service{
-			Port:        service.Port,
-			Name:        service.Name,
-			Link:        service.Link,
-			Image:       service.Image,
-			ShowPort:    service.ShowPort,
-			SystemdName: service.SystemdName,
-			IsSystemd:   isSystemd,
-			Active:      active,
-		})
+	body := lines[startIdx:]
+	if len(body) > 0 && body[len(body)-1] == "" {
+		body = body[:len(body)-1]
 	}
-
-	return result
-}
-
-// isPortInUse checks if a port is in use
-func isPortInUse(port int) bool {
-	cmd := exec.Command("ss", "-tuln")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
+	if n >= len(body) {
+		return body
 	}
-
-	return strings.Contains(string(output), fmt.Sprintf(":%d ", port))
-}
-
-// isSystemdServiceActive checks if a systemd service is active
-func isSystemdServiceActive(serviceName string) bool {
-	if serviceName == "" {
-		return false
-	}
-	
-	cmd := exec.Command("systemctl", "is-active", "--quiet", serviceName)
-	err := cmd.Run()
-	
-	// If the command returns 0 (success), the service is active
-	return err == nil
-}
-
-// renderHTML generates and serves the HTML page
-func renderHTML(w http.ResponseWriter, services []Service) {
-	// Separate active and inactive services
-	var activeServices, inactiveServices []Service
-	for _, service := range services {
-		if service.Active {
-			activeServices = append(activeServices, service)
-		} else {
-			inactiveServices = append(inactiveServices, service)
-		}
-	}
-
-	// Sort active services alphabetically by name
-	sort.Slice(activeServices, func(i, j int) bool {
-		return activeServices[i].Name < activeServices[j].Name
-	})
-
-	// Sort inactive services alphabetically by name
-	sort.Slice(inactiveServices, func(i, j int) bool {
-		return inactiveServices[i].Name < inactiveServices[j].Name
-	})
-
-	// Combine active and inactive services
-	services = append(activeServices, inactiveServices...)
-
-	// Load the HTML template from the external file
-	tmpl, err := template.New("index.html").Funcs(template.FuncMap{
-		"getInitials": func(name string) string {
-			if len(name) == 0 {
-				return "?"
-			}
-			// Extract first letter of the first word
-			for _, char := range name {
-				if char != ' ' && char != '[' {
-					return string(char)
-				}
-			}
-			return "?"
-		},
-		"Year": func() int {
-			return 2025 // Current year
-		},
-	}).ParseFiles("web/index.html")
-	if err != nil {
-		http.Error(w, "Error parsing template", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	err = tmpl.ExecuteTemplate(w, "index.html", services)
-	if err != nil {
-		http.Error(w, "Error executing template", http.StatusInternalServerError)
-	}
+	return body[len(body)-n:]
 }

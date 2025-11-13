@@ -1,106 +1,141 @@
-# SP monitor - Service/Port Monitor Web Dashboard Service
-Simple to configure, ultra-lightweight.
+# SP Monitor — Lightweight Service & Port Dashboard
 
-![interface of SP-Monitor](https://files.oleg.fans/2Kg87j.png)
+HTML dashboard showing status of local services via:
 
-This service displays an HTML dashboard showing the status of configured services, validated by checking if ports are in use or if systemd services are active.
+- TCP port checks
+- systemd unit state (Linux)
+- Windows services & processes (SC / tasklist / PowerShell)
 
-## Configuration
-
-The service is configured using two JSON files:
-
-1. `config.json`:
-```json
-{
-  "port": 7337
-}
-```
-- `port`: The port where the web interface will be available
-
-2. `services.json`:
-```json
-{
-  "services": [
-    {
-      "port": 7331,
-      "name": "Main page",
-      "link": "https://oleg.fans",
-      "image": "https://oleg.fans/favicon.ico",
-      "show_port": false
-    },
-    {
-      "name": "Gala Music Bot",
-      "systemd_name": "GALA-tgmusicbot",
-      "link": "https://t.me/Klaus_House",
-      "image": "https://files.oleg.fans/p8S2bg.jpg"
-    }
-  ]
-}
-```
-
-Each service can have these properties:
-- `port`: Port number to check (optional if using systemd_name)
-- `name`: Display name for the service
-- `link`: Optional URL to link to
-- `image`: Optional URL to service icon/favicon
-- `show_port`: Whether to display the port number on the dashboard
-- `systemd_name`: Optional systemd service name to check instead of port (for systemd services)
+Includes optional start/stop controls, auth, JSON status export, and action/status change logging.
 
 ## Features
 
-- Monitor both port-based services and systemd services
-- Color-coded status indicators (green for running, red for stopped)
-- Dashboard with service icons, names, and links
-- Responsive web design
-- Automatic sorting: active services appear first
-- Customizable service display with optional port visibility
+- Unified view of mixed services (ports, systemd, Windows service/process, run-path executables)
+- Automatic status refresh & JSON export (`status.json` by default)
+- Start / Stop controls per service (granular flags)
+- Simple cookie session auth
+- CSV action & status change log with size limiting
+- Portable (Linux & Windows)
+- Minimal dependencies (standard Go only)
 
-## Usage
+## Quick Start
 
-1. Make sure Go is installed
-2. Run the service directly:
-   ```
-   go run main.go
-   ```
-3. Access the web interface at `http://localhost:7337`
-
-## Building
-
-To build an executable:
-
+```bash
+go run .
+# then visit http://localhost:7337
 ```
+
+Build:
+
+```bash
 go build -o port-monitor
 ```
 
-Then run it with:
+## Configuration Files
 
+- `config.json` — core settings (see `docs/config-example.json`)
+- `services.json` — service list (see `docs/services-example.json`)
+
+Minimal `config.json`:
+
+```json
+{ "port": 7337 }
 ```
+
+Supported `config.json` keys:
+
+| Key | Description | Default |
+| --- | ----------- | ------- |
+| `port` | HTTP listen port | required |
+| `services_file` | Path to services list | `services.json` |
+| `web_dir` | Static assets directory | `web` |
+| `template_file` | HTML template path | `web/index.html` |
+| `admin_login` / `admin_password` | Credentials for UI/API | empty (auth disabled) |
+| `log_file` | CSV log path | `log.csv` |
+| `log_max_bytes` | Max log size (truncate) | unset |
+
+`services.json` service fields:
+
+| Field | Purpose |
+| ----- | ------- |
+| `name` | Display name (card title) |
+| `port` | TCP port to probe (optional if using service/systemd) |
+| `link` / `image` | Optional URL + icon for UI |
+| `show_port` | Show port number on card |
+| `service_name` | Windows service name OR process/exe identifier (also used for Linux if `systemd_name` absent) |
+| `systemd_name` | Linux systemd unit name (e.g. `my-app.service`) |
+| `controls` | Enable any controls for this service |
+| `controls_run` / `controls_shut` | Enable start / stop respectively |
+| `run_path` | Direct executable/script to start (bypasses service manager) |
+| `run_env` | Extra env vars when starting `run_path` |
+
+## Environment Variables
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `EXPORT_PATH` | `.` | Directory for status export |
+| `EXPORT_NAME` | `status.json` | Export file name |
+| `IMPORT_PATH` | `EXPORT_PATH` | Read path for rendering (allows sharing) |
+| `IMPORT_NAME` | `EXPORT_NAME` | Read file name |
+| `STATUS_INTERVAL` | `5s` | Refresh interval (duration) |
+| `PORT_DIAL_TIMEOUT` | `200ms` | TCP dial timeout per check |
+
+Status is written periodically to `EXPORT_PATH/EXPORT_NAME` and read from `IMPORT_PATH/IMPORT_NAME` (can differ to consume external status file).
+
+## API
+
+All JSON responses; authentication via `POST /api/login` sets `session` cookie.
+
+| Endpoint | Method | Description |
+| -------- | ------ | ----------- |
+| `/api/login` | POST | Body: `{"login":"...","password":"..."}`; sets session |
+| `/api/logout` | POST | Clear session |
+| `/api/me` | GET | Returns `{ loggedIn, user }` |
+| `/api/logs?limit=N` | GET | Last N log lines (excludes header); auth required |
+| `/api/service/start` | POST | Body contains identifier (`name` / `service_name` / `systemd_name` / `port`) |
+| `/api/service/stop` | POST | Same identifier schema |
+
+Service action requires: authenticated user + `controls=true` and respective `controls_run` / `controls_shut`.
+
+## Logging
+
+CSV (`log_file`) header:
+
+```text
+timestamp,user,ip,action,name,service_name,systemd_name,port,result
+```
+
+Entries prepend (newest at top). Actions logged:
+
+- Status transitions (`up` / `down`)
+- Start / Stop attempts (result `ok` or error message)
+
+Size trimming if `log_max_bytes` set.
+
+## Platform Notes
+
+- Linux: status via `systemctl is-active`, port via `ss -tuln` fallback TCP dial; control via `systemctl start/stop` or `run_path`.
+- Windows: status via `sc query`, `tasklist`, PowerShell fallback; control via `sc start/stop`, `Start-Process` for executables, `taskkill` for stop.
+
+## Web UI
+
+- Template: `web/index.html` (Go `html/template`)
+- Styles: `web/styles.css`
+- Active services sorted first, then inactive
+
+## Security
+
+In-memory sessions only. Use reverse proxy + HTTPS. Set strong `admin_password`. Limit exposed control endpoints to trusted networks.
+
+## Build / Install
+
+```bash
+go build -o port-monitor
 ./port-monitor
 ```
 
-## Installing as a Systemd Service
+Systemd integration / installer script (if added) would reside in `docs/` (not included in this summary).
 
-To install and run the service as a systemd service:
+---
 
-1. Build the executable:
-   ```
-   go build -o port-monitor
-   ```
-
-2. Run the install script from the docs directory:
-   ```bash
-   cd docs
-   sudo ./install.sh
-   ```
-
-3. Check the service status:
-   ```bash
-   sudo systemctl status port-monitor.service
-   ```
-
-4. Stop the service if needed:
-   ```bash
-   sudo systemctl stop port-monitor.service
-   ```
-
-The service will be available at `http://localhost:7337`.
+Minimal, dependency-free: ideal for small self-hosted dashboards.

@@ -8,11 +8,21 @@
       "show_port": false
     },
     {
+      "name": "Bot Link Eraser",
+      "service_name": "1337-bot-link-eraser",
+      "link": "@EraserLink_bot",
+      "image": "https://files.oleg.fans/EHRexz.jpg",
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true
+    },
+    {
       "port": 7332,
       "name": "Docs Service",
       "link": "https://docs.oleg.fans",
       "image": "https://docs.oleg.fans/favicon.ico",
-      "show_port": false
+      "show_port": false,
+      "service_name": "1337-docs-oleg-fans"
     },
     {
       "port": 7333,
@@ -21,13 +31,13 @@
       "image": "https://auth.oleg.fans/favicon.ico",
       "show_port": false
     },
-   	{
-   	  "port": 7334,
-   	  "name": "Minecraft Web Map",
-   	  "link": "https://mc.oleg.fans",
-   	  "image": "https://mc.oleg.fans/favicon.ico",
-   	  "show_port": false
-   	},
+    {
+      "port": 7334,
+      "name": "Minecraft Web Map",
+      "link": "https://mc.oleg.fans",
+      "image": "https://mc.oleg.fans/favicon.ico",
+      "show_port": false
+    },
     {
       "port": 7335,
       "name": "Message Service",
@@ -40,35 +50,49 @@
       "name": "files.oleg.fans",
       "link": "https://files.oleg.fans",
       "image": "https://files.oleg.fans/favicon.ico",
-      "show_port": false
+      "show_port": false,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "1337-file-share"
     },
     {
       "port": 7342,
       "name": "Pathswiper Game",
       "link": "https://quest.oleg.fans",
       "image": "https://quest.oleg.fans/favicon.ico",
-      "show_port": false
+      "show_port": false,
+      "service_name": "1337-quest"
     },
     {
       "port": 7777,
       "name": "Terraria Server [Vanilla]",
       "link": "http://killingspree.ru",
       "image": "https://killingspree.ru/favicon.ico",
-      "show_port": true
+      "show_port": true,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "1337-terraria"
     },
     {
       "port": 9002,
       "name": "Pixel Grid Editor",
       "link": "http://pixg.oleg.fans",
       "image": "https://killingspree.ru/favicon.ico",
-      "show_port": false
+      "show_port": false,
+      "service_name": "1337-pixg"
     },
     {
       "port": 25565,
       "name": "Minecraft",
       "link": "http://killingspree.ru",
       "image": "https://killingspree.ru/favicon.ico",
-      "show_port": true
+      "show_port": true,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "1337-mc"
     },
     {
       "port": 42420,
@@ -76,12 +100,6 @@
       "link": "http://killingspree.ru",
       "image": "https://killingspree.ru/favicon.ico",
       "show_port": true
-    },
-    {
-      "name": "Gala Music Bot",
-      "systemd_name": "GALA-tgmusicbot",
-      "link": "https://t.me/Klaus_House",
-      "image": "https://files.oleg.fans/p8S2bg.jpg"
     }
   ]
 }

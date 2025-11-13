@@ -1,0 +1,66 @@
+{
+  "services": [
+    {
+      "name": "Example Web App",
+      "port": 8080,
+      "link": "https://example.local",
+      "image": "https://example.local/icon.png",
+      "show_port": true,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "example-web",
+      "systemd_name": "example-web.service",
+      "run_path": "/usr/local/bin/example-web",
+      "run_env": {
+        "ENV": "production",
+        "DEBUG": "0"
+      }
+    },
+    {
+      "name": "Linux systemd service",
+      "link": "https://service.local",
+      "image": "https://service.local/icon.png",
+      "show_port": false,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "my-unit-name",
+      "systemd_name": "my-unit-name.service"
+    },
+    {
+      "name": "Linux custom runner",
+      "port": 9000,
+      "show_port": true,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "run_path": "/opt/myapp/bin/start.sh",
+      "run_env": {
+        "APP_CONFIG": "/etc/myapp/config.yml"
+      }
+    },
+    {
+      "name": "Windows Service Example",
+      "show_port": false,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "Spooler"
+    },
+    {
+      "name": "Windows Process (exe) Example",
+      "show_port": false,
+      "controls": true,
+      "controls_run": true,
+      "controls_shut": true,
+      "service_name": "notepad.exe"
+    },
+    {
+      "name": "Link-only Card",
+      "link": "https://docs.example.local",
+      "image": "https://docs.example.local/favicon.ico",
+      "show_port": false
+    }
+  ]
+}

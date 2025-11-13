@@ -8,38 +8,156 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>status.oleg.fans</h1>
+        <header class="topbar">
+            <div class="top-row">
+                <button id="loginToggle" class="tilde-btn" title="admin">~</button>
+                <h1>status.oleg.fans</h1>
+            </div>
+            <div id="adminPanel" class="admin-panel">
+                <div class="admin-header">
+                    <span class="admin-title">admin</span>
+                    <div class="admin-actions">
+                        <button id="logoffBtn" class="console-close" type="button" onclick="return doLogout()">log off</button>
+                        <button class="console-close" type="button" aria-label="close" onclick="togglePanel()">×</button>
+                    </div>
+                </div>
+                <form id="loginForm" class="login-form" onsubmit="return doLogin(event)">
+                    <input type="text" name="login" placeholder="login" autocomplete="username">
+                    <input type="password" name="password" placeholder="password" autocomplete="current-password">
+                    <button type="submit">login</button>
+                    <div class="login-status" id="loginStatus"></div>
+                </form>
+            </div>
             <div class="subtitle">Наши сервисы</div>
         </header>
-        
-        <div class="dashboard">
+
+        <div class="dashboard" id="dashboard">
             {{range .}}
-            <div class="service-card {{if .Active}}active{{else}}inactive{{end}}">
+            <div class="service-card {{if .Active}}is-up{{else}}is-down{{end}}" data-name="{{.Name}}" data-port="{{.Port}}" data-service="{{.SystemdName}}" data-active="{{.Active}}" data-controls="{{.Controls}}" data-controls-run="{{.ControlsRun}}" data-controls-shut="{{.ControlsShut}}">
                 <div class="service-header">
-                    <div class="service-image">
+                    <div class="avatar">
                         {{if .Image}}
                             <img src="{{.Image}}" alt="{{.Name}} icon" onerror="this.style.display='none'; this.parentElement.innerHTML='{{getInitials .Name}}';">
                         {{else}}
                             {{getInitials .Name}}
                         {{end}}
                     </div>
-                    <h3 class="service-name">{{.Name}}</h3>
+                    <div class="service-title">
+                        <h3 class="service-name">{{.Name}}</h3>
+                        {{if .Link}}
+                        <a href="{{.Link}}" class="service-link" target="_blank" rel="noopener">{{.Link}}</a>
+                        {{end}}
+                    </div>
                 </div>
-                {{if .ShowPort}}<div class="service-port">Port: {{.Port}}</div>{{end}}
-                {{if .Link}}
-                <a href="{{.Link}}" class="service-link" target="_blank">{{.Link}}</a>
-                {{end}}
-                <div class="status status-{{if .Active}}active{{else}}inactive{{end}}">
-                    {{if .Active}}RUNNING{{else}}STOPPED{{end}}
+
+                <div class="service-meta">
+                    {{if .ShowPort}}<span class="meta-item">Port: {{.Port}}</span>{{end}}
+                    <div class="status-badge {{if .Active}}up{{else}}down{{end}}">
+                        {{if .Active}}Up{{else}}Down{{end}}
+                    </div>
+                    <div class="controls">
+                        <button class="ctl-btn start-btn" data-action="start">run</button>
+                        <button class="ctl-btn stop-btn" data-action="stop">down</button>
+                    </div>
                 </div>
             </div>
             {{end}}
         </div>
-        
-        <div class="footer">
+
+        <footer class="footer">
             oleg.fans &copy; {{Year}}
-        </div>
+        </footer>
     </div>
+<script>
+let loggedIn = false;
+let panelVisible = false;
+
+async function safeJSON(r){
+  const ct = (r.headers.get('Content-Type')||'').toLowerCase();
+  if(!ct.includes('application/json')){ return null; }
+  try { return await r.json(); } catch(e){ console.warn('json parse failed', e); return null; }
+}
+async function fetchMe(){
+  try{
+    const r = await fetch('/api/me');
+    const j = await safeJSON(r) || {};
+    loggedIn = !!j.loggedIn;
+    updateControls();
+    updateAdminPanelView();
+  }catch(e){ console.error(e); }
+}
+function updateControls(){
+  document.querySelectorAll('.service-card').forEach(card=>{
+    const active = card.getAttribute('data-active')==='true';
+    const controls = card.getAttribute('data-controls')==='true';
+    const canRun = card.getAttribute('data-controls-run')==='true';
+    const canShut = card.getAttribute('data-controls-shut')==='true';
+    const ctl = card.querySelector('.controls');
+    if(loggedIn && controls){
+      ctl.style.display='flex';
+      const startBtn = ctl.querySelector('.start-btn');
+      const stopBtn = ctl.querySelector('.stop-btn');
+      startBtn.disabled = active || !canRun;
+      stopBtn.disabled = !active || !canShut;
+    } else {
+      ctl.style.display='none';
+    }
+  });
+}
+function togglePanel(){
+  panelVisible = !panelVisible;
+  const panel = document.getElementById('adminPanel');
+  panel.style.display = panelVisible ? 'flex' : 'none';
+  updateAdminPanelView();
+}
+function updateAdminPanelView(){
+  const loginForm = document.getElementById('loginForm');
+  const logoffBtn = document.getElementById('logoffBtn');
+  if(!panelVisible){ return; }
+  if(loggedIn){
+    loginForm.style.display='none';
+    logoffBtn.style.display='inline-block';
+  } else {
+    loginForm.style.display='flex';
+    logoffBtn.style.display='none';
+  }
+}
+async function doLogin(ev){
+  ev.preventDefault();
+  const fd=new FormData(ev.target);
+  const body={login:fd.get('login'), password:fd.get('password')};
+  const r=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const status=document.getElementById('loginStatus');
+  if(r.ok){ status.textContent='ok'; await fetchMe(); } else { status.textContent='err'; }
+  return false;
+}
+async function doLogout(){
+  try{ await fetch('/api/logout',{method:'POST'}); }catch(e){}
+  loggedIn=false;
+  updateControls();
+  updateAdminPanelView();
+  return false;
+}
+function serviceAction(card, action){
+  const name = card.getAttribute('data-name');
+  const port = parseInt(card.getAttribute('data-port'))||0;
+  const service = card.getAttribute('data-service');
+  const payload={name, port, systemd_name: service};
+  fetch('/api/service/'+action,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+    .then(async r=>{ await safeJSON(r); fetchMe(); setTimeout(()=>{ location.reload(); },800); })
+    .catch(e=>console.error(e));
+}
+window.addEventListener('keydown', (e)=>{ if(e.code==='Backquote'){ togglePanel(); }});
+window.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('loginToggle').addEventListener('click', togglePanel);
+  fetchMe();
+  document.querySelectorAll('.ctl-btn').forEach(btn=>{
+    btn.addEventListener('click', ev=>{
+      const card=ev.target.closest('.service-card');
+      serviceAction(card, ev.target.dataset.action);
+    });
+  });
+});
+</script>
 </body>
 </html>
