@@ -19,6 +19,17 @@ var statusExportInterval = 5 * time.Second
 var envCfg EnvConfig
 var appCfg *Config
 
+func absFromExe(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return p
+	}
+	return filepath.Join(filepath.Dir(exe), p)
+}
+
 func main() {
 	// Load configuration
 	config, err := loadConfig("config.json")
@@ -44,10 +55,16 @@ func main() {
 		appCfg.LogFile = "log.csv"
 	}
 
+	// Resolve absolute paths from executable directory (robust across OS)
+	webDirAbs := absFromExe(webDir)
+	templateFileAbs := absFromExe(templateFile)
+
 	// Load environment settings via helper
 	envCfg = LoadEnv()
-	statusFileWrite := filepath.Join(envCfg.ExportPath, envCfg.ExportName)
-	statusFileRead := filepath.Join(envCfg.ImportPath, envCfg.ImportName)
+	exportPathAbs := absFromExe(envCfg.ExportPath)
+	importPathAbs := absFromExe(envCfg.ImportPath)
+	statusFileWrite := filepath.Join(exportPathAbs, envCfg.ExportName)
+	statusFileRead := filepath.Join(importPathAbs, envCfg.ImportName)
 	statusExportInterval = envCfg.StatusInterval
 
 	// Load services configuration
@@ -213,7 +230,9 @@ func main() {
 	http.Handle("/api/service/stop", actionHandler("stop"))
 
 	// Expose exported status.json (optional consumption by clients)
-	http.Handle("/status.json", http.FileServer(http.Dir(envCfg.ExportPath)))
+	http.HandleFunc("/status.json", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, statusFileWrite)
+	})
 
 	// Page
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -222,15 +241,15 @@ func main() {
 			// Do not block on live checks at first load; render quickly with defaults
 			services = defaultServicesFromInfo(servicesConfig.Services)
 		}
-		renderHTML(w, services, templateFile)
+		renderHTML(w, services, templateFileAbs)
 	})
 
 	// Static
 	http.HandleFunc("/styles.css", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(webDir, "styles.css"))
+		http.ServeFile(w, r, filepath.Join(webDirAbs, "styles.css"))
 	})
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(webDir, "favicon.ico"))
+		http.ServeFile(w, r, filepath.Join(webDirAbs, "favicon.ico"))
 	})
 
 	fmt.Printf("Server starting on port %d (export: %s, import: %s, interval: %s, os: %s)\n", config.Port, statusFileWrite, statusFileRead, statusExportInterval, runtime.GOOS)
