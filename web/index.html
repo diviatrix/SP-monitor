@@ -129,7 +129,8 @@ async function doLogin(ev){
   const body={login:fd.get('login'), password:fd.get('password')};
   const r=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const status=document.getElementById('loginStatus');
-  if(r.ok){ status.textContent='ok'; await fetchMe(); } else { status.textContent='err'; }
+  const j = await safeJSON(r) || {};
+  if(r.ok){ status.textContent = j.message || 'ok'; await fetchMe(); } else { status.textContent = j.message || 'err'; }
   return false;
 }
 async function doLogout(){

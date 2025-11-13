@@ -19,6 +19,9 @@ var statusExportInterval = 5 * time.Second
 var envCfg EnvConfig
 var appCfg *Config
 
+// Add in-memory common passwords set
+var commonPw map[string]struct{}
+
 // resolvePath keeps dev `go run` working (temp go-build exe) and supports installed binary.
 func resolvePath(p string) string {
 	if p == "" {
@@ -52,6 +55,37 @@ func resolvePath(p string) string {
 		return filepath.Join(cwd, p)
 	}
 	return p
+}
+
+// Helper to load common passwords JSON array from file into a set (lowercased)
+func loadCommonPasswords(path string) map[string]struct{} {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("common passwords file not found: %v", err)
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		log.Printf("failed to parse common passwords: %v", err)
+		return nil
+	}
+	m := make(map[string]struct{}, len(arr))
+	for _, s := range arr {
+		v := strings.ToLower(strings.TrimSpace(s))
+		if v == "" {
+			continue
+		}
+		m[v] = struct{}{}
+	}
+	return m
+}
+
+func isCommonPassword(pw string) bool {
+	if len(commonPw) == 0 {
+		return false
+	}
+	_, ok := commonPw[strings.ToLower(strings.TrimSpace(pw))]
+	return ok
 }
 
 func serveStatic(w http.ResponseWriter, r *http.Request, path string) {
@@ -107,6 +141,10 @@ func main() {
 		log.Fatal("Error loading services config:", err)
 	}
 
+	// Load common passwords file (optional)
+	commonPwPath := resolvePath(filepath.Join("data", "commonpasswords.json"))
+	commonPw = loadCommonPasswords(commonPwPath)
+
 	// Background exporter with change detection (non-blocking startup)
 	go func() {
 		// initial snapshot + export
@@ -141,6 +179,11 @@ func main() {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		// Reject well-known/common passwords explicitly
+		if isCommonPassword(body.Pass) {
+			respondJSONCode(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "Пук, среньк"})
+			return
+		}
 		if body.Login == appCfg.AdminLogin && body.Pass == appCfg.AdminPass && body.Login != "" {
 			tok := newToken()
 			sessions.Lock()
@@ -150,7 +193,7 @@ func main() {
 			respondJSON(w, map[string]any{"ok": true})
 			return
 		}
-		respondJSONCode(w, http.StatusUnauthorized, map[string]any{"ok": false})
+		respondJSONCode(w, http.StatusUnauthorized, map[string]any{"ok": false, "message": "invalid credentials"})
 	})
 
 	http.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {

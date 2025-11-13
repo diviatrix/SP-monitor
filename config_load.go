@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 )
 
@@ -24,7 +26,13 @@ func loadServicesConfig(filename string) (*ServicesConfig, error) {
 	}
 	var sc ServicesConfig
 	if err := json.Unmarshal(data, &sc); err != nil {
-		return nil, err
+		// Print a short prefix of the file to help diagnose malformed JSON
+		preview := string(data)
+		if len(preview) > 300 {
+			preview = preview[:300] + "..."
+		}
+		log.Printf("services.json parse error: %v\nfile: %s\npreview: %q", err, filename, preview)
+		return nil, fmt.Errorf("%w", err)
 	}
 	return &sc, nil
 }
