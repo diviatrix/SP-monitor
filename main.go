@@ -19,15 +19,39 @@ var statusExportInterval = 5 * time.Second
 var envCfg EnvConfig
 var appCfg *Config
 
-func absFromExe(p string) string {
+// resolvePath keeps dev `go run` working (temp go-build exe) and supports installed binary.
+func resolvePath(p string) string {
+	if p == "" {
+		return p
+	}
 	if filepath.IsAbs(p) {
 		return p
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return p
+	// 1) Prefer current working directory if file/dir exists there
+	cwd, _ := os.Getwd()
+	if cwd != "" {
+		cand := filepath.Join(cwd, p)
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
 	}
-	return filepath.Join(filepath.Dir(exe), p)
+	// 2) Try executable directory if not a go-build temp binary
+	exe, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exe)
+		isTemp := strings.Contains(exeDir, "go-build") || strings.HasPrefix(exeDir, os.TempDir())
+		if !isTemp {
+			cand := filepath.Join(exeDir, p)
+			if _, err2 := os.Stat(cand); err2 == nil {
+				return cand
+			}
+		}
+	}
+	// 3) Fallback: return joined with cwd even if missing (caller may create later)
+	if cwd != "" {
+		return filepath.Join(cwd, p)
+	}
+	return p
 }
 
 func main() {
@@ -55,20 +79,21 @@ func main() {
 		appCfg.LogFile = "log.csv"
 	}
 
-	// Resolve absolute paths from executable directory (robust across OS)
-	webDirAbs := absFromExe(webDir)
-	templateFileAbs := absFromExe(templateFile)
+	// Resolve runtime paths (safe for go run & installed binary)
+	webDirAbs := resolvePath(webDir)
+	templateFileAbs := resolvePath(templateFile)
+	svFileAbs := resolvePath(svFile)
 
 	// Load environment settings via helper
 	envCfg = LoadEnv()
-	exportPathAbs := absFromExe(envCfg.ExportPath)
-	importPathAbs := absFromExe(envCfg.ImportPath)
+	exportPathAbs := resolvePath(envCfg.ExportPath)
+	importPathAbs := resolvePath(envCfg.ImportPath)
 	statusFileWrite := filepath.Join(exportPathAbs, envCfg.ExportName)
 	statusFileRead := filepath.Join(importPathAbs, envCfg.ImportName)
 	statusExportInterval = envCfg.StatusInterval
 
 	// Load services configuration
-	servicesConfig, err := loadServicesConfig(svFile)
+	servicesConfig, err := loadServicesConfig(svFileAbs)
 	if err != nil {
 		log.Fatal("Error loading services config:", err)
 	}
@@ -238,7 +263,6 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		services, err := loadStatusFile(statusFileRead)
 		if err != nil {
-			// Do not block on live checks at first load; render quickly with defaults
 			services = defaultServicesFromInfo(servicesConfig.Services)
 		}
 		renderHTML(w, services, templateFileAbs)
